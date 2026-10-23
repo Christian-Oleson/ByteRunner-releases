@@ -1,0 +1,35 @@
+# Checks every half hour that a ByteRunner Pro purchase would get its licence key. If the licence
+# server is down, a buyer pays and receives nothing, and nothing else would say so: a failed run here
+# makes GitHub email the repository owner.
+#
+# It lives in this public repository because Actions minutes are free here. The server's address is
+# the repository variable READY_URL, not written in this file.
+name: Licence server check
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  ready:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: The licence server is ready to fulfil an order
+        env:
+          READY_URL: ${{ vars.READY_URL }}
+        run: |
+          if [ -z "$READY_URL" ]; then echo "::error::The READY_URL repository variable isn't set."; exit 1; fi
+          # Three tries, a minute apart, so one slow answer isn't an alarm.
+          for attempt in 1 2 3; do
+            rm -f body.txt
+            code=$(curl -sS -o body.txt -w '%{http_code}' --max-time 20 "$READY_URL" || true)  # 000: no answer at all
+            if [ "$code" = "200" ]; then echo "Ready (attempt $attempt)."; exit 0; fi
+            echo "Attempt $attempt: $code $(cat body.txt 2>/dev/null)"
+            [ "$attempt" -lt 3 ] && sleep 60
+          done
+          echo "::error::The licence server isn't ready: a purchase now would not get its key. Check 'flyctl status' and 'flyctl logs' for byterunner-fulfillment."
+          exit 1
